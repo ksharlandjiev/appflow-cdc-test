@@ -1,4 +1,7 @@
 
+  # Datalake Hydration and Content Enrichment 
+   ![alt text](Architecture.jpg)
+
   This template will create a set of resources:
     * Amazon AppFlow batch flow to fetch data from Salesfroce to S3. 
     * Amazon AppFlow event flow to listen for CDC changes and propagate this to EventBridge. 
@@ -9,6 +12,8 @@
       Feel free to modify the entire query if you like!
 
     - If the Partner EventBridge Rule doesn't work and does not propagate events, please recreate manually. There maybe an error in the CFN template - I have to fix.
+
+    - If the Athena query doesn't work, please edit the Amazon AppFlow - and make sure the ID field is mapped. 
 
   Installation Guide: 
   1. Create Salesforce connector profile in Amazon AppFlow

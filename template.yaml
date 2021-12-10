@@ -62,6 +62,11 @@ Parameters:
     Type: String
     Default: "https://sqs.us-east-1.amazonaws.com/294239653061/testq"      
 
+  OutputLocation: 
+    Description: "Athena Query output location - new s3 bucket, don't create in advance"
+    Type: String
+    Default: "test123"      
+
   CloudWatchLogLevel:
     Description: "Log level for AWS StepFunctions"
     Type: String
@@ -470,7 +475,7 @@ Resources:
                     QueryString.$: !Sub States.Format('SELECT * FROM "gluedatabase-cbmufwedpdp4"."sfdc_datalake_hydration_test3_batch"
                       WHERE id=\'{}\'', $)
                     ResultConfiguration:
-                      OutputLocation: s3://athenac6ggwss2b7ap/results
+                      OutputLocation: !Sub s3://${OutputLocation}/results
                   Next: GetObject (1)
                 GetObject (1):
                   Type: Task
@@ -529,7 +534,7 @@ Resources:
                   - logs:DescribeResourcePolicies
                   - logs:DescribeLogGroups
                 Resource: "*"
-        - PolicyName: StartGlueCrawler
+        - PolicyName: AllowAthenaQueries
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -544,7 +549,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:Get*
-                Resource: !Ref DatalakeBucket                
+                Resource: !GetAtt DatalakeBucket.Arn               
                 
   # Define CloudWatch Log Group for State execution logs
   CDCStateMachineLogGroup:
