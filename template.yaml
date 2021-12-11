@@ -1,19 +1,12 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
+  Author: Kamen Sharlandjiev
+  Repository: https://github.com/ksharlandjiev/appflow-cdc-test
   This template will create a set of resources:
     * Amazon AppFlow batch flow to fetch data from Salesfroce to S3. 
     * Amazon AppFlow event flow to listen for CDC changes and propagate this to EventBridge. 
   IMPORTANT!!!
-    - Search for "Athena StartQueryExecution" and modify the query once you know the database and table name. 
-      Feel free to modify the entire query if you like!
-
-  Installation Guide: 
-  1. Create Salesforce connector profile in Amazon AppFlow
-  2. Launch this template and wait until finish. 
-  3. Go to Amazon Athena and setup Athena S3 bucket.
-  4. Launch Amazon AppFlow batch flow - this will populate your datalake and trigger Glue Crawler to craw the data. 
-  5. Go to EventBridge and associate the partner event bus 
-  6. Go to Amazon AppFlow and activate the event driven flow. 
+    - Please refer to the README.md file!
   
   
 Parameters:
@@ -26,11 +19,6 @@ Parameters:
     Description: The name of the salesforce object we will ingest with AppFlow to our S3 Datalake.
     Type: String
     Default: "Lead"     
-
-  AppFlowSalesForceFlowName: 
-    Description: Name of the flow to be used to pull data from Salesforce
-    Type: String
-    Default: "SFDC-DataLake-Hydration"  
 
   ScheduleStartTime: 
     Description: Scheduled flow needs start data (timestamp) and timezone.
@@ -60,12 +48,7 @@ Parameters:
   QueueUrl: 
     Description: "The CDC function uses SQS to send the enriched message. Please specify the SQS URL here."
     Type: String
-    Default: "https://sqs.us-east-1.amazonaws.com/294239653061/testq"      
-
-  OutputLocation: 
-    Description: "Athena Query output location - new s3 bucket, don't create in advance"
-    Type: String
-    Default: "test123"      
+    Default: "https://sqs.us-east-1.amazonaws.com/294239653061/testq"       
 
   CloudWatchLogLevel:
     Description: "Log level for AWS StepFunctions"
@@ -150,7 +133,7 @@ Resources:
   AppFlowSFDCtoS3:
     Type: AWS::AppFlow::Flow
     Properties: 
-      FlowName: !Sub "${AppFlowSalesForceFlowName}-${AWS::StackName}-batch"
+      FlowName: !Sub "${AWS::StackName}-batch"
       Description: "Pull data from Salesforce and saves into S3 datalake"
       TriggerConfig:
         TriggerType: OnDemand      
@@ -179,12 +162,6 @@ Resources:
               AggregationConfig:
                 aggregationType: None
       Tasks:
-      - TaskType: Filter
-        SourceFields:
-        - Id
-        ConnectorOperator:
-          Salesforce: PROJECTION
-
       - TaskType: Map_all
         SourceFields: []
         TaskProperties:
@@ -199,7 +176,7 @@ Resources:
   AppFlowSalesforceEvents:
     Type: AWS::AppFlow::Flow
     Properties: 
-      FlowName: !Sub "${AppFlowSalesForceFlowName}-${AWS::StackName}-event"
+      FlowName: !Sub "${AWS::StackName}-event"
       TriggerConfig:
         TriggerType: Event
       SourceFlowConfig:
@@ -408,15 +385,16 @@ Resources:
             Action: 'sts:AssumeRole'
       Path: /
       Policies:
-        - PolicyName: PutEventsDestinationBus
+        - PolicyName: StartExecution
           PolicyDocument:
             Version: 2012-10-17
             Statement:
               - Effect: Allow
                 Action:
                   - 'states:StartExecution'
-                  - 'states:StartSyncExecution'
-                Resource: !Ref StateMachineStartCrawler
+                Resource: 
+                  - !Ref StateMachineStartCrawler
+                  - !Ref CDCStateMachine
 
 # --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
 # EventBridge - Salesforce CDC Rule
@@ -435,9 +413,7 @@ Resources:
         - 
           Id: !GetAtt StateMachineStartCrawler.Name
           Arn: !Ref StateMachineStartCrawler
-          RoleArn: !GetAtt 
-            - EventBridgeIAMrole
-            - Arn
+          RoleArn: !GetAtt EventBridgeIAMrole.Arn
 
 # --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
 # StepFunction - CDC
@@ -472,15 +448,15 @@ Resources:
                   Resource: arn:aws:states:::athena:startQueryExecution.sync
                   Parameters:
                     WorkGroup: primary
-                    QueryString.$: !Sub States.Format('SELECT * FROM "gluedatabase-cbmufwedpdp4"."sfdc_datalake_hydration_test3_batch"
+                    QueryString.$: !Sub States.Format('SELECT * FROM "${GlueDatabase}"."${AWS::StackName}_batch"
                       WHERE id=\'{}\'', $)
                     ResultConfiguration:
-                      OutputLocation: !Sub s3://${OutputLocation}/results
+                      OutputLocation: !Sub s3://${AWS::AccountId}-cdc-athena/results
                   Next: GetObject (1)
                 GetObject (1):
                   Type: Task
                   Parameters:
-                    Bucket: athenac6ggwss2b7ap
+                    Bucket: !Sub ${AWS::AccountId}-cdc-athena
                     Key.$: States.Format('results/{}.csv', $.QueryExecution.QueryExecutionId)
                   Resource: arn:aws:states:::aws-sdk:s3:getObject
                   Next: SQS SendMessage
@@ -542,14 +518,61 @@ Resources:
                 Action:
                   - athena:*
                 Resource: "*"
+        - PolicyName: GlueGetTable
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:GetTable
+                  - glue:GetPartitions
+                Resource:
+                  - !Join
+                    - ''
+                    - - 'arn:aws:glue:'
+                      - !Ref AWS::Region
+                      - ":"
+                      - !Ref AWS::AccountId
+                      - ":catalog"
+                  - !Join
+                    - ''
+                    - - 'arn:aws:glue:'
+                      - !Ref AWS::Region
+                      - ":"
+                      - !Ref AWS::AccountId
+                      - ":database/"
+                      - !Ref GlueDatabase     
+                  - !Join
+                    - ''
+                    - - 'arn:aws:glue:'
+                      - !Ref AWS::Region
+                      - ":"
+                      - !Ref AWS::AccountId
+                      - ":table/"
+                      - !Ref GlueDatabase
+                      - "/*"                      
         - PolicyName: S3Get
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
-                  - s3:Get*
-                Resource: !GetAtt DatalakeBucket.Arn               
+                  - s3:*
+                Resource: 
+                  - !GetAtt DatalakeBucket.Arn
+                  - !Join
+                    - ''
+                    - - !GetAtt DatalakeBucket.Arn
+                      - /*                
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Sub ${AWS::AccountId}-cdc-athena                             
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Sub ${AWS::AccountId}-cdc-athena
+                      - /*                                           
                 
   # Define CloudWatch Log Group for State execution logs
   CDCStateMachineLogGroup:
