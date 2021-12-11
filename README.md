@@ -28,3 +28,5 @@
   * If Athena Query doesn't work, please edit the Step Function and check if the CFN template have generated correct database and table name in the SQL query! Somtimes this could be tricky if the CFN Stack name has capital letters etc. 
   
   * If the Partner EventBridge Rule doesn't work and does not propagate events, please recreate manually.
+
+  * This CFN template will allow the CDC StepFunction to send SQS message to **ALL** queues! You may want to recify this following least privilege!.

@@ -573,6 +573,14 @@ Resources:
                     - - 'arn:aws:s3:::'
                       - !Sub ${AWS::AccountId}-cdc-athena
                       - /*                                           
+        - PolicyName: AllowSQSSendMessage
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource: "*"  # FIXME! Least Privilege!
                 
   # Define CloudWatch Log Group for State execution logs
   CDCStateMachineLogGroup:
