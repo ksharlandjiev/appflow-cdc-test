@@ -21,7 +21,7 @@
 
     7.1) Verify the CDC AppFlow is executed. 
 
-    7.2) Verify the CDC StepFunction is executed. If this is not happening, you may need to recreate the EventBridge Rule for the partner event bus manually - I think there is a defect in CFN creating partner event rule. 
+    7.2) Verify the CDC StepFunction is executed. If this is not happening, you may need to recreate the EventBridge Rule for the partner event bus manually. Use the same IAM role as the original rule for target execution of the step funciton!
 
 **IMPORTANT!!!**
 

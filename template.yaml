@@ -429,47 +429,53 @@ Resources:
         StartAt: Choice
         States:
           Choice:
-            Type: Choice
             Choices:
-            - Variable: "$.detail.ChangeEventHeader.changedFields"
-              IsPresent: true
+            - IsPresent: true
               Next: Map
+              Variable: "$.detail.ChangeEventHeader.changedFields"
             Default: Pass (1)
-          Pass (1):
-            Type: Pass
-            End: true
+            Type: Choice
           Map:
-            Type: Map
+            ItemsPath: "$.detail.ChangeEventHeader.recordIds"
             Iterator:
               StartAt: Athena StartQueryExecution
               States:
                 Athena StartQueryExecution:
-                  Type: Task
-                  Resource: arn:aws:states:::athena:startQueryExecution.sync
+                  Next: GetObject (1)
                   Parameters:
-                    WorkGroup: primary
                     QueryString.$: !Sub States.Format('SELECT * FROM "${GlueDatabase}"."${AWS::StackName}_batch"
-                      WHERE id=\'{}\'', $)
+                              WHERE id=\'{}\'', $.recordId)
                     ResultConfiguration:
                       OutputLocation: !Sub s3://${AWS::AccountId}-cdc-athena/results
-                  Next: GetObject (1)
-                GetObject (1):
+                    WorkGroup: primary
+                  Resource: arn:aws:states:::athena:startQueryExecution.sync
                   Type: Task
+                  ResultPath: "$.athena"
+                GetObject (1):
                   Parameters:
                     Bucket: !Sub ${AWS::AccountId}-cdc-athena
-                    Key.$: States.Format('results/{}.csv', $.QueryExecution.QueryExecutionId)
+                    Key.$: States.Format('results/{}.csv', $.athena.QueryExecution.QueryExecutionId)
                   Resource: arn:aws:states:::aws-sdk:s3:getObject
-                  Next: SQS SendMessage
-                  OutputPath: "$.Body"
-                SQS SendMessage:
                   Type: Task
-                  Resource: arn:aws:states:::sqs:sendMessage
+                  ResultPath: "$.details.record"
+                  Next: SQS SendMessage
+                  ResultSelector:
+                    data.$: "$.Body"
+                SQS SendMessage:
+                  End: true
                   Parameters:
                     MessageBody.$: "$"
                     QueueUrl: !Ref QueueUrl
-                  End: true
-            ItemsPath: "$.detail.ChangeEventHeader.recordIds"
+                  Resource: arn:aws:states:::sqs:sendMessage
+                  Type: Task
+            Type: Map
+            Parameters:
+              details.$: "$.detail"
+              recordId.$: "$$.Map.Item.Value"
             End: true
+          Pass (1):
+            End: true
+            Type: Pass
       StateMachineType: "STANDARD"  
       LoggingConfiguration:
         Destinations:
@@ -581,7 +587,7 @@ Resources:
                 Action:
                   - sqs:SendMessage
                 Resource: "*"  # FIXME! Least Privilege!
-                
+
   # Define CloudWatch Log Group for State execution logs
   CDCStateMachineLogGroup:
     Type: AWS::Logs::LogGroup
